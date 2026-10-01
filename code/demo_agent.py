@@ -8,19 +8,27 @@ from tools.write_file import write_file
 import sqlite3
 
 
-DB_PATH = "memorise.db"
+DB_PATH = r"C:\Users\sword\PycharmProjects\Langchain\code\memorise.db"
 
 def init_db():
-    conn = sqlite3.connect('memorise.db')
-    cursor = conn.cursor()
-    cursor.execute('''create table memorise(
-                      id integer primary key,
-                      content text not null,
-                      create_time timestamp default current_timestamp
-                      )
-                   ''')
-    conn.commit()
-    conn.close()
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''create table if not exists memorise(
+                          id integer primary key,
+                          content text not null,
+                          create_time timestamp default current_timestamp
+                          )
+                       ''')
+        conn.commit()
+    except sqlite3.Error:
+        if conn is not None:
+            conn.rollback()
+        raise
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def memorise(text):
@@ -31,10 +39,10 @@ def memorise(text):
     conn.close()
 
 def read_memory() -> str:
-    """读取全部历史记忆"""
+    print("===正在读取记忆===\n")
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT content FROM memorise ORDER BY id ASC")
+    cursor.execute("SELECT content FROM memorise ORDER BY id ")
     rows = cursor.fetchall()
     conn.close()
     return "\n".join([row[0] for row in rows])
@@ -49,8 +57,13 @@ agent=FunctionAgent(
         context_window=8000),
         system_prompt="你是一个私人助手，可以回答用户的任何问题。在回答用户问题之前请先调用read_memory工具读取历史记忆，提取关键信息后再回答用户问题"
 )
-ctx=Context(workflow=agent)
+ctx=Context(workflow="calculator,read_file,write_file,read_memory")
 async def main():
+    try:
+        init_db()
+    except sqlite3.Error as e:
+        print(e)
+        return
     while True:
         user_input = input("User>> ")
         memorise(user_input)
