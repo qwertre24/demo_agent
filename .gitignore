@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+
+# Local runtime data
+code/data/
+code/storage/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
