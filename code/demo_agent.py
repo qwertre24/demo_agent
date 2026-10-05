@@ -50,6 +50,7 @@ def init_db() -> None:
                     "ADD COLUMN role TEXT NOT NULL DEFAULT 'legacy'"
                 )
 
+            # noinspection SqlNoDataSourceInspection,SqlResolve
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_memorise_session_role_id "
                 "ON memorise(session_id, role, id)"
