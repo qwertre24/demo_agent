@@ -1,5 +1,6 @@
 import asyncio
 import sqlite3
+from contextlib import closing
 from typing import Final
 
 from llama_index.core.agent.workflow import FunctionAgent
@@ -18,53 +19,46 @@ VALID_MEMORY_ROLES: Final = frozenset({"user", "assistant", "system"})
 
 def init_db() -> None:
     """初始化记忆表，并兼容旧版数据库结构。"""
-    conn: sqlite3.Connection | None = None
-
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS memorise (
-                id INTEGER PRIMARY KEY,
-                session_id TEXT NOT NULL DEFAULT 'default',
-                role TEXT NOT NULL DEFAULT 'legacy',
-                content TEXT NOT NULL,
-                create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-
-        existing_columns = {
-            row[1] for row in cursor.execute("PRAGMA table_info(memorise)")
-        }
-
-        if "session_id" not in existing_columns:
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        try:
+            cursor = conn.cursor()
             cursor.execute(
-                "ALTER TABLE memorise "
-                "ADD COLUMN session_id TEXT NOT NULL DEFAULT 'default'"
+                """
+                CREATE TABLE IF NOT EXISTS memorise (
+                    id INTEGER PRIMARY KEY,
+                    session_id TEXT NOT NULL DEFAULT 'default',
+                    role TEXT NOT NULL DEFAULT 'legacy',
+                    content TEXT NOT NULL,
+                    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
             )
 
-        if "role" not in existing_columns:
+            existing_columns = {
+                row[1] for row in cursor.execute("PRAGMA table_info(memorise)")
+            }
+
+            if "session_id" not in existing_columns:
+                cursor.execute(
+                    "ALTER TABLE memorise "
+                    "ADD COLUMN session_id TEXT NOT NULL DEFAULT 'default'"
+                )
+
+            if "role" not in existing_columns:
+                cursor.execute(
+                    "ALTER TABLE memorise "
+                    "ADD COLUMN role TEXT NOT NULL DEFAULT 'legacy'"
+                )
+
             cursor.execute(
-                "ALTER TABLE memorise "
-                "ADD COLUMN role TEXT NOT NULL DEFAULT 'legacy'"
+                "CREATE INDEX IF NOT EXISTS idx_memorise_session_role_id "
+                "ON memorise(session_id, role, id)"
             )
+            conn.commit()
 
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_memorise_session_role_id "
-            "ON memorise(session_id, role, id)"
-        )
-        conn.commit()
-
-    except sqlite3.Error:
-        if conn is not None:
+        except sqlite3.Error:
             conn.rollback()
-        raise
-
-    finally:
-        if conn is not None:
-            conn.close()
+            raise
 
 
 def add_memory(
@@ -83,28 +77,22 @@ def add_memory(
     if not text:
         raise ValueError("content 不能为空")
 
-    conn: sqlite3.Connection | None = None
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        try:
+            cursor = conn.cursor()
+            # noinspection SqlNoDataSourceInspection,SqlResolve
+            cursor.execute(
+                """
+                INSERT INTO memorise (session_id, role, content)
+                VALUES (?, ?, ?)
+                """,
+                (session_id, role, text),
+            )
+            conn.commit()
 
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO memorise (session_id, role, content)
-            VALUES (?, ?, ?)
-            """,
-            (session_id, role, text),
-        )
-        conn.commit()
-
-    except sqlite3.Error:
-        if conn is not None:
+        except sqlite3.Error:
             conn.rollback()
-        raise
-
-    finally:
-        if conn is not None:
-            conn.close()
+            raise
 
 
 def read_memory() -> str:
@@ -118,11 +106,9 @@ def read_memory() -> str:
     """
     print("===正在读取记忆===\n")
 
-    conn: sqlite3.Connection | None = None
-
-    try:
-        conn = sqlite3.connect(DB_PATH)
+    with closing(sqlite3.connect(DB_PATH)) as conn:
         cursor = conn.cursor()
+        # noinspection SqlNoDataSourceInspection,SqlResolve
         rows = cursor.execute(
             """
             SELECT role, content, create_time
@@ -134,13 +120,6 @@ def read_memory() -> str:
             """,
             (SESSION_ID, MEMORY_LIMIT),
         ).fetchall()
-
-    except sqlite3.Error:
-        raise
-
-    finally:
-        if conn is not None:
-            conn.close()
 
     if not rows:
         return "以下是成功读取到的长期记忆，共 0 条。"
