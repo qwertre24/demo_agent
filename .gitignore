@@ -24,3 +24,7 @@ code/storage/
 
 # Logs
 *.log
+
+# Local backups
+*.bak
+*.bak-*
